@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <title>Task Search - Active Search with Infinite Scroll</title>
+
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+
+<style>
+
+</style>
+
+<body>
+
+  <h1>Task Search - Active Search with Infinite Scroll!</h1>
+
+  <div style="display: flex; padding-bottom: 1em;">
+
+    <div style="padding-right: 1em;">
+      <label for="name">Name:</label>
+      <input id="name" name="name" type="search" value={{.QueryParams.name}} autocomplete="on" autofocus />
+    </div>
+
+    <div style="padding-right: 1em;">
+      <label for="name_search_type">Name Search Type:</label>
+      <select id="name_search_type" name="nameSearchType" value={{.QueryParams.nameSearchType}}>
+        <option value="contains" {{if eq .QueryParams.nameSearchType "contains" }}selected{{end}}>CONTAINS</option>
+        <option value="startsWith" {{if eq .QueryParams.nameSearchType "startsWith" }}selected{{end}}>STARTS WITH
+        </option>
+        <option value="endsWith" {{if eq .QueryParams.nameSearchType "endsWith" }}selected{{end}}>ENDS WITH</option>
+      </select>
+    </div>
+
+    <div style="padding-right: 1em;">
+      <label for="priority_select">Priority:</label>
+      <select id="priority_select" name="priority" value={{.QueryParams.priority}}>
+        {{range $k, $p := .Priorities}}
+        <option value={{$p.Value}} {{if eq $.QueryParams.priority $p.Value}}selected{{end}}>{{$p.TagContent}}
+        </option>
+        {{end}}
+      </select>
+    </div>
+
+    <div style="padding-right: 1em;">
+      <label for="status_select">Status:</label>
+      <select id="status_select" name="status" value={{.QueryParams.status}}>
+        {{ range $k, $s := .Statuses}}
+        <option value={{$s.Value}} {{if eq $.QueryParams.status $s.Value}}selected{{end}}>{{$s.TagContent}}</option>
+        {{end}}
+      </select>
+    </div>
+
+    <div style="padding-right: 1em;">
+      <label id="due_date_label" for="due_date_year_input">Due Date:</label>
+      <input id="due_date_year_input" type="number" name="dueDate" min="2020" max="2030">
+      <input id="due_date_year_month_input" type="month" name="dueDate" min="2020-01" max="2030-12">
+      <input id="due_date_year_month_day_input" type="date" name="dueDate" min="2020-01-01" max="2030-12-31">
+    </div>
+
+    <div style="padding-right: 1em;">
+      <label for="due_date_search_type_select">Due Date Search Type</label>
+      <select id="due_date_search_type_select" name="due_date_search_type"
+        onchange="handleDueDateSearchTypeSelectChange(this.value)">
+        <option value="year">Year</option>
+        <option value="month">Month</option>
+        <option value="day">Day</option>
+      </select>
+    </div>
+
+    <div style="padding-right: 1em;">
+      <label for="sort_column_select">Sort By:</label>
+      <select id="sort_column_select" name="otherCursorColumn">
+        {{range $k, $s := .SortColumnSelectOptions}}
+        <option value={{$s.Value}} {{if eq $.QueryParams.otherCursorColumn $s.Value}}selected{{end}}>{{$s.TagContent}}
+        </option>
+        {{end}}
+      </select>
+    </div>
+
+    <div>
+      <label for="sort_order_select">Order:</label>
+      <select id="sort_order_select" name="sortOrder">
+        <option value="asc" {{if eq $.QueryParams.sortOrder "asc" }}selected{{end}}>ASC</option>
+        <option value="desc" {{if eq $.QueryParams.sortOrder "desc" }}selected{{end}}>DESC</option>
+      </select>
+    </div>
+
+  </div>
+
+  <table>
+
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th style="padding-right: 4em;">Priority</th>
+        <th style="padding-right: 4em;">Status</th>
+        <th>Due Date</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {{range .Tasks}}
+      <tr>
+        <td>{{.Name}}</td>
+        <td>
+          {{if eq .Priority 1}}
+          LOW
+          {{else if eq .Priority 2}}
+          MEDIUM
+          {{else if eq .Priority 3}}
+          HIGH
+          {{end}}
+        </td>
+        <td>
+          {{if eq .Status 1}}
+          NEW
+          {{else if eq .Status 2}}
+          STARTED
+          {{else if eq .Status 3}}
+          BLOCKED
+          {{else if eq .Status 4}}
+          DONE
+          {{end}}
+        </td>
+        <td>{{.DueDate}}</td>
+        <td style=" padding-left: 3em;">{{.ID}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+
+  </table>
+
+  <script>
+    const dueDateYearInput = document.getElementById("due_date_year_input");
+    const dueDateYearMonthInput = document.getElementById("due_date_year_month_input");
+    const dueDateYearMonthDayInput = document.getElementById("due_date_year_month_day_input");
+    const dueDateLabel = document.getElementById("due_date_label");
+
+    onload = (event) => {
+      const dueDateQueryParam = new URLSearchParams(document.location.search).get("dueDate");
+      switch (dueDateQueryParam.length) {
+        case 4:
+          dueDateYearInput.value = dueDateQueryParam;
+          dueDateYearMonthInput.setAttribute("disabled", "");
+          dueDateYearMonthInput.setAttribute("hidden", "");
+          dueDateYearMonthDayInput.setAttribute("disabled", "");
+          dueDateYearMonthDayInput.setAttribute("hidden", "");
+          dueDateLabel.setAttribute("for", "due_date_year_input");
+          break;
+        case 7:
+          dueDateYearMonthInput.value = dueDateQueryParam;
+          dueDateYearInput.setAttribute("disabled", "");
+          dueDateYearInput.setAttribute("hidden", "");
+          dueDateYearMonthDayInput.setAttribute("disabled", "");
+          dueDateYearMonthDayInput.setAttribute("hidden", "");
+          dueDateLabel.setAttribute("for", "due_date_year_month_input");
+          break;
+        default:
+          dueDateYearMonthDayInput.value = dueDateQueryParam;
+          dueDateYearInput.setAttribute("disabled", "");
+          dueDateYearInput.setAttribute("hidden", "");
+          dueDateYearMonthInput.setAttribute("disabled", "");
+          dueDateYearMonthInput.setAttribute("hidden", "");
+          dueDateLabel.setAttribute("for", "due_date_year_month_day_input");
+          break;
+      };
+    };
+
+
+    function handleDueDateSearchTypeSelectChange(value) {
+      switch (value) {
+        case "year":
+          dueDateYearInput.removeAttribute("disabled");
+          dueDateYearInput.removeAttribute("hidden");
+          dueDateYearMonthInput.setAttribute("disabled", "");
+          dueDateYearMonthInput.setAttribute("hidden", "");
+          dueDateYearMonthDayInput.setAttribute("disabled", "");
+          dueDateYearMonthDayInput.setAttribute("hidden", "");
+          dueDateLabel.setAttribute("for", "due_date_year_input");
+          break;
+        case "month":
+          dueDateYearInput.setAttribute("disabled", "");
+          dueDateYearInput.setAttribute("hidden", "");
+          dueDateYearMonthInput.removeAttribute("disabled");
+          dueDateYearMonthInput.removeAttribute("hidden");
+          dueDateYearMonthDayInput.setAttribute("disabled", "");
+          dueDateYearMonthDayInput.setAttribute("hidden", "");
+          dueDateLabel.setAttribute("for", "due_date_year_month_input");
+          break;
+        default:
+          dueDateYearInput.setAttribute("disabled", "");
+          dueDateYearInput.setAttribute("hidden", "");
+          dueDateYearMonthInput.setAttribute("disabled", "");
+          dueDateYearMonthInput.setAttribute("hidden", "");
+          dueDateYearMonthDayInput.removeAttribute("disabled");
+          dueDateYearMonthDayInput.removeAttribute("hidden");
+          dueDateLabel.setAttribute("for", "due_date_year_month_day_input");
+          break;
+      }
+    }
+
+  </script>
+
+</body>
+
+</html>
