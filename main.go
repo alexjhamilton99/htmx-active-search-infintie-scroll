@@ -20,29 +20,29 @@ func main() {
 	} else {
 		tmpl := template.Must(template.ParseFiles("tasks.html"))
 
-		// http://localhost:8080/tasks?name=e&nameSearchType=contains&status=2&priority=3&idCursorValue=99999&dueDate=2029&otherCursorColumn=due_date&otherCursorValue=2029-03-01&sortOrder=desc
-		// http://localhost:8080/tasks?name=e&nameSearchType=contains&status=2&priority=3&idCursorValue=99999&dueDate=2029&otherCursorColumn=due_date&otherCursorValue=2029-03-01&sortColumn=due_date&sortOrder=asc
 		http.HandleFunc("/tasks", func(w http.ResponseWriter, r *http.Request) {
 			searchPartMap := r.URL.Query()
-			tasks := taskSearch(db,
-				searchPartMap.Get("name"),
-				searchPartMap.Get("nameSearchType"),
-				convertQueryParamToUint8(searchPartMap, "priority"),
-				convertQueryParamToUint8(searchPartMap, "status"),
-				searchPartMap.Get("dueDate"),
-				convertQueryParamToUint32(searchPartMap, "idCursorValue"),
-				searchPartMap.Get("otherCursorColumn"),
-				searchPartMap.Get("otherCursorValue"),
-				searchPartMap.Get("sortOrder"),
-			)
+			var tasks []Task
+			name := searchPartMap.Get("name")
+			nameSearchType := searchPartMap.Get("nameSearchType")
+			priority := convertQueryParamToUint8(searchPartMap, "priority")
+			status := convertQueryParamToUint8(searchPartMap, "status")
+			dueDate := searchPartMap.Get("dueDate")
+			idCursorValue := convertQueryParamToUint32(searchPartMap, "idCursorValue")
+			otherCursorColumn := searchPartMap.Get("otherCursorColumn")
+			otherCursorValue := searchPartMap.Get("otherCursorValue")
+			sortOrder := searchPartMap.Get("sortOrder")
+
+			if idCursorValue == 0 || otherCursorValue == "" {
+				tasks = fetchFirst25Tasks(db, name, nameSearchType, priority, status, dueDate, otherCursorColumn, sortOrder)
+			} else {
+				tasks = fetchNext25Tasks(db, name, nameSearchType, priority, status, dueDate, idCursorValue, otherCursorColumn, otherCursorValue, sortOrder)
+			}
 
 			queryParams := make(map[string]string)
 			for k, vals := range r.URL.Query() {
 				queryParams[k] = vals[0] // take first value when multiple exist
-				fmt.Println(k, vals[0])
 			}
-
-			fmt.Println(tasks)
 
 			data := TasksPageData{Tasks: tasks, QueryParams: queryParams, Priorities: priorities, Statuses: statuses, SortColumnSelectOptions: sortColumnSelectOptions}
 
@@ -82,8 +82,7 @@ func convertQueryParamToUint32(searchPartMap url.Values, paramName string) uint3
 	return uint32(num)
 }
 
-// TODO: create constants/"enums" for nameSearchType and dueSearchType
-func taskSearch(db *sql.DB, name string, nameSearchType string, priority uint8, status uint8, dueDate string,
+func fetchNext25Tasks(db *sql.DB, name string, nameSearchType string, priority uint8, status uint8, dueDate string,
 	idCursorValue uint32, otherCursorColumn string, otherCursorValue string, sortOrder string) []Task {
 	switch nameSearchType {
 	case "startsWith":
@@ -145,9 +144,6 @@ func taskSearch(db *sql.DB, name string, nameSearchType string, priority uint8, 
 	ORDER BY %s %s, id
 	LIMIT 25`
 
-	fmt.Println(fmt.Sprintf(sql, priorityClause, statusClause, otherCursorColumn, cursorOperator, otherCursorColumn, sortOrder))
-	fmt.Println(name, dueDate, otherCursorValue, idCursorValue)
-
 	rows, err := db.Query(fmt.Sprintf(sql, priorityClause, statusClause, otherCursorColumn, cursorOperator, otherCursorColumn, sortOrder),
 		name, dueDate, otherCursorValue, idCursorValue)
 	if err != nil {
@@ -162,6 +158,70 @@ func taskSearch(db *sql.DB, name string, nameSearchType string, priority uint8, 
 			panic(err)
 		}
 		tasks = append(tasks, task)
+	}
+	return tasks
+}
+
+func fetchFirst25Tasks(db *sql.DB, name string, nameSearchType string, priority uint8, status uint8, dueDate string,
+	sortColumn string, sortOrder string) []Task {
+	switch nameSearchType {
+	case "startsWith":
+		name = "%" + name
+	case "endsWith":
+		name += "%"
+	default:
+		name = "%" + name + "%"
+	}
+
+	var priorityClause string
+	switch priority {
+	case 1, 2, 3:
+		priorityClause = "= " + strconv.Itoa(int(priority))
+	default:
+		priorityClause = "IN (1, 2, 3)"
+	}
+
+	var statusClause string
+	switch status {
+	case 1, 2, 3, 4:
+		statusClause = "= " + strconv.Itoa(int(priority))
+	default:
+		statusClause = "IN (1, 2, 3, 4)"
+	}
+
+	dueDate += "%"
+
+	if !slices.Contains([]string{"name", "priority", "status", "due_date"}, sortColumn) {
+		sortColumn = "name"
+	}
+
+	if !slices.Contains([]string{"ASC", "DESC"}, strings.ToUpper(sortOrder)) {
+		sortOrder = "ASC"
+	}
+
+	sql := `SELECT id, name, priority, status, due_date
+	FROM tasks
+	WHERE name LIKE ?
+	AND priority %s
+	AND status %s
+	AND due_date LIKE ?
+	ORDER BY %s %s
+	LIMIT 25`
+
+	var tasks []Task
+	rows, err := db.Query(fmt.Sprintf(sql, priorityClause, statusClause, sortColumn, sortOrder), name, dueDate)
+	if err != nil {
+		panic(err)
+	} else {
+		var task Task
+		for rows.Next() {
+			err := rows.Scan(&task.ID, &task.Name, &task.Priority, &task.Status, &task.DueDate)
+			if err != nil {
+				panic(err)
+			} else {
+				tasks = append(tasks, task)
+			}
+		}
 	}
 	return tasks
 }
@@ -247,9 +307,6 @@ type selectOption struct {
 	Value      string
 	TagContent string
 }
-
-// ID              string
-// QueryParamValue string
 
 var all selectOption = selectOption{Value: "0", TagContent: "ALL"}
 
