@@ -142,66 +142,42 @@ func TestFetchFirstOrNext25Tasks(t *testing.T) {
 					switch sortColAndOtherCursorSelector {
 					case 0:
 						if sortOrder == "ASC" {
-							if nextTask.Name < task.Name {
+							if nextTask.Name < task.Name || (nextTask.Name == task.Name && nextTask.ID < task.ID) {
 								t.Errorf("Name sort ASC error: %v should come before %v", task, nextTask)
 							}
 						} else {
-							if nextTask.Name > task.Name {
-								t.Errorf("Name sort DESC error: %v should come before %v", task, nextTask)
-							}
-						}
-
-						if task.Name == nextTask.Name {
-							if nextTask.ID < task.ID {
-								t.Errorf("ID Cursor sort order error when names are equal; '%v' shouldn't come before '%v'", nextTask, task)
+							if nextTask.Name > task.Name || (nextTask.Name == task.Name && nextTask.ID > task.ID) {
+								t.Errorf("Name sort DESC error: %v should come before %v", nextTask, task)
 							}
 						}
 					case 1:
 						if sortOrder == "ASC" {
-							if nextTask.Priority < task.Priority {
+							if nextTask.Priority < task.Priority || (nextTask.Priority == task.Priority && nextTask.ID < task.ID) {
 								t.Errorf("Priority sort ASC error: %v should come before %v", task, nextTask)
 							}
 						} else {
-							if nextTask.Priority > task.Priority {
-								t.Errorf("Priority sort DESC error: %v should come before %v", task, nextTask)
-							}
-						}
-
-						if task.Priority == nextTask.Priority {
-							if nextTask.ID < task.ID {
-								t.Errorf("ID Cursor sort order error when priorities are equal; '%v' shouldn't come before '%v'", nextTask, task)
+							if nextTask.Priority > task.Priority || (nextTask.Priority == task.Priority && nextTask.ID > task.ID) {
+								t.Errorf("Priority sort DESC error: %v should come before %v", nextTask, task)
 							}
 						}
 					case 2:
 						if sortOrder == "ASC" {
-							if nextTask.Status < task.Status {
+							if nextTask.Status < task.Status || (nextTask.Status == task.Status && nextTask.ID < task.ID) {
 								t.Errorf("Status sort ASC error: %v should come before %v", task, nextTask)
 							}
 						} else {
-							if nextTask.Status > task.Status {
-								t.Errorf("Status sort DESC error: %v should come before %v", task, nextTask)
-							}
-						}
-
-						if task.Status == nextTask.Status {
-							if nextTask.ID < task.ID {
-								t.Errorf("ID Cursor sort order error when statuses are equal; '%v' shouldn't come before '%v'", nextTask, task)
+							if nextTask.Status > task.Status || (nextTask.Status == task.Status && nextTask.ID > task.ID) {
+								t.Errorf("Status sort DESC error: %v should come before %v", nextTask, task)
 							}
 						}
 					case 3:
 						if sortOrder == "ASC" {
-							if nextTask.DueDate < task.DueDate {
+							if nextTask.DueDate < task.DueDate || (nextTask.DueDate == task.DueDate && nextTask.ID < task.ID) {
 								t.Errorf("DueDate sort ASC error: %v should come before %v", task, nextTask)
 							}
 						} else {
-							if nextTask.DueDate > task.DueDate {
-								t.Errorf("DueDate sort DESC error: %v should come before %v", task, nextTask)
-							}
-						}
-
-						if task.DueDate == nextTask.DueDate {
-							if nextTask.ID < task.ID {
-								t.Errorf("ID Cursor sort order error when dueDates are equal; '%v' shouldn't come before '%v'", nextTask, task)
+							if nextTask.DueDate > task.DueDate || (nextTask.DueDate == task.DueDate && nextTask.ID > task.ID) {
+								t.Errorf("DueDate sort DESC error: %v should come before %v", nextTask, task)
 							}
 						}
 					}
