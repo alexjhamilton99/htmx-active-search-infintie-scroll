@@ -14,16 +14,17 @@ func TestFetchFirstOrNext25Tasks(t *testing.T) {
 	if db, err := sql.Open("sqlite3", "./task.db"); err == nil {
 		numTests := 20
 
-		whereClause := " WHERE id IN (" // TODO: switch to a "string builder"
+		var whereClause strings.Builder
+		whereClause.WriteString(" WHERE id IN (")
 		for i := 0; i < numTests; i++ {
 			if i < (numTests - 1) {
-				whereClause += strconv.Itoa(rand.Intn(1_000_000)+1) + ", "
+				whereClause.WriteString(strconv.Itoa(rand.Intn(1_000_000)+1) + ", ")
 			} else {
-				whereClause += strconv.Itoa(rand.Intn(1_000_000)+1) + ")"
+				whereClause.WriteString(strconv.Itoa(rand.Intn(1_000_000)+1) + ")")
 			}
 		}
 
-		rows, err := db.Query(fmt.Sprintf("SELECT id, name, priority, status, due_date FROM tasks %s", whereClause))
+		rows, err := db.Query(fmt.Sprintf("SELECT id, name, priority, status, due_date FROM tasks %s", whereClause.String()))
 		if err != nil {
 			t.Errorf("SQL for selecting %d seed tasks failed", numTests)
 		}
@@ -142,66 +143,42 @@ func TestFetchFirstOrNext25Tasks(t *testing.T) {
 					switch sortColAndOtherCursorSelector {
 					case 0:
 						if sortOrder == "ASC" {
-							if nextTask.Name < task.Name {
+							if nextTask.Name < task.Name || (nextTask.Name == task.Name && nextTask.ID < task.ID) {
 								t.Errorf("Name sort ASC error: %v should come before %v", task, nextTask)
 							}
 						} else {
-							if nextTask.Name > task.Name {
-								t.Errorf("Name sort DESC error: %v should come before %v", task, nextTask)
-							}
-						}
-
-						if task.Name == nextTask.Name {
-							if nextTask.ID < task.ID {
-								t.Errorf("ID Cursor sort order error when names are equal; '%v' shouldn't come before '%v'", nextTask, task)
+							if nextTask.Name > task.Name || (nextTask.Name == task.Name && nextTask.ID > task.ID) {
+								t.Errorf("Name sort DESC error: %v should come before %v", nextTask, task)
 							}
 						}
 					case 1:
 						if sortOrder == "ASC" {
-							if nextTask.Priority < task.Priority {
+							if nextTask.Priority < task.Priority || (nextTask.Priority == task.Priority && nextTask.ID < task.ID) {
 								t.Errorf("Priority sort ASC error: %v should come before %v", task, nextTask)
 							}
 						} else {
-							if nextTask.Priority > task.Priority {
-								t.Errorf("Priority sort DESC error: %v should come before %v", task, nextTask)
-							}
-						}
-
-						if task.Priority == nextTask.Priority {
-							if nextTask.ID < task.ID {
-								t.Errorf("ID Cursor sort order error when priorities are equal; '%v' shouldn't come before '%v'", nextTask, task)
+							if nextTask.Priority > task.Priority || (nextTask.Priority == task.Priority && nextTask.ID > task.ID) {
+								t.Errorf("Priority sort DESC error: %v should come before %v", nextTask, task)
 							}
 						}
 					case 2:
 						if sortOrder == "ASC" {
-							if nextTask.Status < task.Status {
+							if nextTask.Status < task.Status || (nextTask.Status == task.Status && nextTask.ID < task.ID) {
 								t.Errorf("Status sort ASC error: %v should come before %v", task, nextTask)
 							}
 						} else {
-							if nextTask.Status > task.Status {
-								t.Errorf("Status sort DESC error: %v should come before %v", task, nextTask)
-							}
-						}
-
-						if task.Status == nextTask.Status {
-							if nextTask.ID < task.ID {
-								t.Errorf("ID Cursor sort order error when statuses are equal; '%v' shouldn't come before '%v'", nextTask, task)
+							if nextTask.Status > task.Status || (nextTask.Status == task.Status && nextTask.ID > task.ID) {
+								t.Errorf("Status sort DESC error: %v should come before %v", nextTask, task)
 							}
 						}
 					case 3:
 						if sortOrder == "ASC" {
-							if nextTask.DueDate < task.DueDate {
+							if nextTask.DueDate < task.DueDate || (nextTask.DueDate == task.DueDate && nextTask.ID < task.ID) {
 								t.Errorf("DueDate sort ASC error: %v should come before %v", task, nextTask)
 							}
 						} else {
-							if nextTask.DueDate > task.DueDate {
-								t.Errorf("DueDate sort DESC error: %v should come before %v", task, nextTask)
-							}
-						}
-
-						if task.DueDate == nextTask.DueDate {
-							if nextTask.ID < task.ID {
-								t.Errorf("ID Cursor sort order error when dueDates are equal; '%v' shouldn't come before '%v'", nextTask, task)
+							if nextTask.DueDate > task.DueDate || (nextTask.DueDate == task.DueDate && nextTask.ID > task.ID) {
+								t.Errorf("DueDate sort DESC error: %v should come before %v", nextTask, task)
 							}
 						}
 					}
@@ -279,16 +256,16 @@ func TestCountTasks(t *testing.T) {
 		panic(err)
 	} else {
 		taskCount := countTasks(db, "", "", 0, 0, "")
-		if taskCount != 1_000_000 {
-			t.Errorf("Search without values should yield 1,000,000 tasks")
+		if taskCount != "1,000,000" {
+			t.Errorf("Search without values should yield 1,000,000 tasks; instead if was " + taskCount)
 		}
 		taskCount = countTasks(db, "A", "startsWith", 0, 0, "")
-		if taskCount != 49_648 {
-			t.Errorf("Search without values should yield 49,648 tasks")
+		if taskCount != "49,648" {
+			t.Errorf("Search without values should yield 49,648 tasks; instead if was " + taskCount)
 		}
 		taskCount = countTasks(db, "E", "contains", 1, 2, "2025")
-		if taskCount != 7_476 {
-			t.Errorf("Search without values should yield 7_476 tasks")
+		if taskCount != "7,476" {
+			t.Errorf("Search without values should yield 7,476 tasks; instead it was " + taskCount)
 		}
 		defer db.Close()
 	}
