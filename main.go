@@ -18,11 +18,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	} else {
-		tmpl := template.Must(template.ParseFiles("tasks.html"))
-
 		http.HandleFunc("/tasks", func(w http.ResponseWriter, r *http.Request) {
 			searchPartMap := r.URL.Query()
-			var tasks []Task
 			name := searchPartMap.Get("name")
 			nameSearchType := searchPartMap.Get("nameSearchType")
 			priority := convertQueryParamToUint8(searchPartMap, "priority")
@@ -33,8 +30,26 @@ func main() {
 			otherCursorValue := searchPartMap.Get("otherCursorValue")
 			sortOrder := searchPartMap.Get("sortOrder")
 
+			var tasks []Task
 			if idCursorValue == 0 || otherCursorValue == "" {
 				tasks = fetchFirst25Tasks(db, name, nameSearchType, priority, status, dueDate, otherCursorColumn, sortOrder)
+				numTasksFound := len(tasks)
+
+				if numTasksFound > 0 {
+					lastTask := tasks[len(tasks)-1]
+					switch otherCursorColumn {
+					case "due_date":
+						otherCursorValue = lastTask.DueDate
+					case "status":
+						otherCursorValue = strconv.Itoa(int(lastTask.Status))
+					case "priority":
+						otherCursorValue = strconv.Itoa(int(lastTask.Priority))
+					default:
+						otherCursorValue = lastTask.Name
+					}
+				}
+
+				w.Header().Set("Hx-Trigger", "countTasks")
 			} else {
 				tasks = fetchNext25Tasks(db, name, nameSearchType, priority, status, dueDate, idCursorValue, otherCursorColumn, otherCursorValue, sortOrder)
 			}
@@ -44,20 +59,98 @@ func main() {
 				queryParams[k] = vals[0] // take first value when multiple exist
 			}
 
-			data := TasksPageData{Tasks: tasks, QueryParams: queryParams, Priorities: priorities, Statuses: statuses, SortColumnSelectOptions: sortColumnSelectOptions}
+			if r.Header.Get("Hx-Request") != "true" {
+				tmpl, err := template.ParseFiles("tasks.html")
+				if err != nil {
+					panic(err)
+				}
+				data := TasksPageData{Tasks: tasks, QueryParams: queryParams, Priorities: priorities, Statuses: statuses, SortColumnSelectOptions: sortColumnSelectOptions, OtherCursorValueStr: otherCursorValue}
+				tmpl.Execute(w, data)
+			} else {
+				row := `
+					<tr>
+						<td>%s</td>
+						<td>%s</td>
+						<td>%s</td>
+						<td>%s</td>
+					</tr>
+					`
+				// <td style="padding-left: 3em;">%d</td>
 
-			tmpl.Execute(w, data)
+				var priority string
+				var status string
+				for idx, t := range tasks {
+					switch t.Priority {
+					case 1:
+						priority = "LOW"
+					case 2:
+						priority = "MEDIUM"
+					case 3:
+						priority = "HIGH"
+					}
+					switch t.Status {
+					case 1:
+						status = "NEW"
+					case 2:
+						status = "STARTED"
+					case 3:
+						status = "BLOCKED"
+					case 4:
+						status = "DONE"
+					}
+					if idx < (len(tasks) - 1) {
+						w.Write([]byte(fmt.Sprintf(row, t.Name, priority, status, t.DueDate)))
+						// w.Write([]byte(fmt.Sprintf(row, t.Name, priority, status, t.DueDate, t.ID)))
+					} else {
+						var otherCursorValueStr string
+						switch otherCursorColumn {
+						case "priority":
+							otherCursorValueStr = strconv.Itoa(int(t.Priority))
+						case "status":
+							otherCursorValueStr = strconv.Itoa(int(t.Status))
+						case "due_date":
+							otherCursorValueStr = t.DueDate
+						default:
+							otherCursorValueStr = t.Name
+						}
+						w.Write([]byte(fmt.Sprintf(`
+						<tr
+								hx-get="/tasks"
+								hx-include="input, select"
+								hx-vals='{"idCursorValue": "%d", "otherCursorValue": "%s"}'
+								hx-trigger="revealed"
+								hx-swap="afterend"
+								hx-indicator="#table_spinner"
+						>
+							<td>%s</td>
+							<td>%s</td>
+							<td>%s</td>
+							<td>%s</td>
+						</tr>
+					`, t.ID, otherCursorValueStr, t.Name, priority, status, t.DueDate)))
+						// <td style="padding-left: 3em;">%d</td>
+						// `, t.ID, otherCursorValueStr, t.Name, priority, status, t.DueDate, t.ID)))
+					}
+				}
+			}
 		})
 
 		http.HandleFunc("/task-count", func(w http.ResponseWriter, r *http.Request) {
 			var searchPartMap url.Values = r.URL.Query()
-			countTasks(db,
+			taskCount := countTasks(db,
 				searchPartMap.Get("name"),
 				searchPartMap.Get("nameSearchType"),
 				convertQueryParamToUint8(searchPartMap, "priority"),
 				convertQueryParamToUint8(searchPartMap, "status"),
 				searchPartMap.Get("dueDate"),
 			)
+			var taskCountMsg string
+			if taskCount == "1" {
+				taskCountMsg = taskCount + " result"
+			} else {
+				taskCountMsg = taskCount + " results"
+			}
+			w.Write([]byte(taskCountMsg))
 		})
 
 		http.ListenAndServe(":8080", nil)
@@ -135,17 +228,35 @@ func fetchNext25Tasks(db *sql.DB, name string, nameSearchType string, priority u
 		sortOrder = "ASC"
 	}
 
-	sql := `SELECT id, name, priority, status, due_date FROM tasks
+	var index string
+	switch otherCursorColumn {
+	case "status":
+		index = "tasks_status_id_idx"
+	case "priority":
+		index = "tasks_priority_id_idx"
+	case "due_date":
+		index = "tasks_due_date_id_idx"
+	default:
+		index = "tasks_name_id_idx"
+	}
+
+	sql := fmt.Sprintf(`SELECT id, name, priority, status, due_date FROM tasks
+	INDEXED BY %s
 	WHERE name LIKE ?
 	AND priority %s
 	AND status %s
 	AND due_date LIKE ?
 	AND (%s, id) %s (?, ?)
-	ORDER BY %s %s, id
-	LIMIT 25`
+	ORDER BY %s %s, id %s
+	LIMIT 25`, index, priorityClause, statusClause, otherCursorColumn, cursorOperator, otherCursorColumn, sortOrder, sortOrder)
 
-	rows, err := db.Query(fmt.Sprintf(sql, priorityClause, statusClause, otherCursorColumn, cursorOperator, otherCursorColumn, sortOrder),
-		name, dueDate, otherCursorValue, idCursorValue)
+	fmt.Println("\nSQL...fetch next 25 tasks")
+	fmt.Println(sql + "\n")
+	fmt.Println("NAME:", name)
+	fmt.Println("DUE_DATE:", dueDate)
+	fmt.Println("Other cursor value:", otherCursorValue)
+	fmt.Println("ID cursor value:", idCursorValue)
+	rows, err := db.Query(sql, name, dueDate, otherCursorValue, idCursorValue)
 	if err != nil {
 		panic(err)
 	}
@@ -166,9 +277,9 @@ func fetchFirst25Tasks(db *sql.DB, name string, nameSearchType string, priority 
 	sortColumn string, sortOrder string) []Task {
 	switch nameSearchType {
 	case "startsWith":
-		name = "%" + name
-	case "endsWith":
 		name += "%"
+	case "endsWith":
+		name = "%" + name
 	default:
 		name = "%" + name + "%"
 	}
@@ -184,7 +295,7 @@ func fetchFirst25Tasks(db *sql.DB, name string, nameSearchType string, priority 
 	var statusClause string
 	switch status {
 	case 1, 2, 3, 4:
-		statusClause = "= " + strconv.Itoa(int(priority))
+		statusClause = "= " + strconv.Itoa(int(status))
 	default:
 		statusClause = "IN (1, 2, 3, 4)"
 	}
@@ -199,17 +310,34 @@ func fetchFirst25Tasks(db *sql.DB, name string, nameSearchType string, priority 
 		sortOrder = "ASC"
 	}
 
-	sql := `SELECT id, name, priority, status, due_date
-	FROM tasks
+	var index string
+	switch sortColumn {
+	case "status":
+		index = "tasks_status_id_idx"
+	case "priority":
+		index = "tasks_priority_id_idx"
+	case "due_date":
+		index = "tasks_due_date_id_idx"
+	default:
+		index = "tasks_name_id_idx"
+	}
+
+	sql := fmt.Sprintf(`SELECT id, name, priority, status, due_date FROM tasks
+	INDEXED BY %s
 	WHERE name LIKE ?
 	AND priority %s
 	AND status %s
 	AND due_date LIKE ?
-	ORDER BY %s %s
-	LIMIT 25`
+	ORDER BY %s %s, id %s
+	LIMIT 25`, index, priorityClause, statusClause, sortColumn, sortOrder, sortOrder)
+
+	fmt.Println("\nSQL...fetch first 25 tasks")
+	fmt.Println(sql + "\n")
+	fmt.Println("NAME:", name)
+	fmt.Println("DUE_DATE:", dueDate)
 
 	var tasks []Task
-	rows, err := db.Query(fmt.Sprintf(sql, priorityClause, statusClause, sortColumn, sortOrder), name, dueDate)
+	rows, err := db.Query(sql, name, dueDate)
 	if err != nil {
 		panic(err)
 	} else {
@@ -226,7 +354,7 @@ func fetchFirst25Tasks(db *sql.DB, name string, nameSearchType string, priority 
 	return tasks
 }
 
-func countTasks(db *sql.DB, name string, nameSearchType string, priority uint8, status uint8, dueDate string) uint32 {
+func countTasks(db *sql.DB, name string, nameSearchType string, priority uint8, status uint8, dueDate string) string {
 	switch nameSearchType {
 	case "startsWith":
 		name += "%"
@@ -254,18 +382,22 @@ func countTasks(db *sql.DB, name string, nameSearchType string, priority uint8, 
 
 	dueDate += "%"
 
-	sql := `SELECT COUNT(*) FROM tasks
+	sql := fmt.Sprintf(`SELECT FORMAT('%%,d', COUNT(*)) FROM tasks
 	WHERE name LIKE ?
 	AND priority %s
 	AND status %s
-	AND due_date LIKE ?`
+	AND due_date LIKE ?`, priorityClause, statusClause)
 
-	var count uint32
-	err := db.QueryRow(fmt.Sprintf(sql, priorityClause, statusClause), name, dueDate).Scan(&count)
+	fmt.Println("\nSQL...count tasks")
+	fmt.Println(sql + "\n")
+	fmt.Println("NAME:", name)
+	fmt.Println("DUE_DATE:", dueDate)
+
+	var count string
+	err := db.QueryRow(sql, name, dueDate).Scan(&count)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("Task Count: %d\n", count)
 	return count
 }
 
@@ -274,7 +406,7 @@ type Task struct {
 	Name     string
 	Priority uint8
 	Status   uint8
-	DueDate  string // TODO: change to a "Date" type
+	DueDate  string // convert to time.Time objects only when needed
 }
 
 func (t Task) string() string {
@@ -287,6 +419,7 @@ type TasksPageData struct {
 	Priorities              []selectOption
 	Statuses                []selectOption
 	SortColumnSelectOptions []selectOption
+	OtherCursorValueStr     string
 }
 
 const (

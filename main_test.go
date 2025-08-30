@@ -14,16 +14,17 @@ func TestFetchFirstOrNext25Tasks(t *testing.T) {
 	if db, err := sql.Open("sqlite3", "./task.db"); err == nil {
 		numTests := 20
 
-		whereClause := " WHERE id IN (" // TODO: switch to a "string builder"
+		var whereClause strings.Builder
+		whereClause.WriteString(" WHERE id IN (")
 		for i := 0; i < numTests; i++ {
 			if i < (numTests - 1) {
-				whereClause += strconv.Itoa(rand.Intn(1_000_000)+1) + ", "
+				whereClause.WriteString(strconv.Itoa(rand.Intn(1_000_000)+1) + ", ")
 			} else {
-				whereClause += strconv.Itoa(rand.Intn(1_000_000)+1) + ")"
+				whereClause.WriteString(strconv.Itoa(rand.Intn(1_000_000)+1) + ")")
 			}
 		}
 
-		rows, err := db.Query(fmt.Sprintf("SELECT id, name, priority, status, due_date FROM tasks %s", whereClause))
+		rows, err := db.Query(fmt.Sprintf("SELECT id, name, priority, status, due_date FROM tasks %s", whereClause.String()))
 		if err != nil {
 			t.Errorf("SQL for selecting %d seed tasks failed", numTests)
 		}
@@ -255,16 +256,16 @@ func TestCountTasks(t *testing.T) {
 		panic(err)
 	} else {
 		taskCount := countTasks(db, "", "", 0, 0, "")
-		if taskCount != 1_000_000 {
-			t.Errorf("Search without values should yield 1,000,000 tasks")
+		if taskCount != "1,000,000" {
+			t.Errorf("Search without values should yield 1,000,000 tasks; instead if was " + taskCount)
 		}
 		taskCount = countTasks(db, "A", "startsWith", 0, 0, "")
-		if taskCount != 49_648 {
-			t.Errorf("Search without values should yield 49,648 tasks")
+		if taskCount != "49,648" {
+			t.Errorf("Search without values should yield 49,648 tasks; instead if was " + taskCount)
 		}
 		taskCount = countTasks(db, "E", "contains", 1, 2, "2025")
-		if taskCount != 7_476 {
-			t.Errorf("Search without values should yield 7_476 tasks")
+		if taskCount != "7,476" {
+			t.Errorf("Search without values should yield 7,476 tasks; instead it was " + taskCount)
 		}
 		defer db.Close()
 	}
