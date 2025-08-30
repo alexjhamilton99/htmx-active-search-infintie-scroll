@@ -36,6 +36,12 @@
     white-space: nowrap;
   }
 
+  .form-field {
+    padding-right: 1em;
+    display: flex;
+    flex-direction: column;
+  }
+
 </style>
 
 <body>
@@ -44,14 +50,14 @@
 
   <div style="display: flex; padding-bottom: 1em;">
 
-    <div style="padding-right: 1em;">
+    <div class="form-field">
       <label for="name">Name:</label>
       <input id="name" name="name" type="search" value="{{.QueryParams.name}}" autocomplete="on" autofocus hx-get="/tasks"
         hx-include="input, select" hx-trigger="keyup changed delay:500ms"
         hx-target="tbody" hx-push-url="true" hx-indicator="#table_spinner" />
     </div>
 
-    <div style="padding-right: 1em;">
+    <div class="form-field">
       <label for="name_search_type">Name Search Type:</label>
       <select id="name_search_type" name="nameSearchType" value="{{.QueryParams.nameSearchType}}"
           hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
@@ -62,7 +68,7 @@
       </select>
     </div>
 
-    <div style="padding-right: 1em;">
+    <div class="form-field">
       <label for="priority_select">Priority:</label>
       <select id="priority_select" name="priority" value="{{.QueryParams.priority}}"
           hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
@@ -73,7 +79,7 @@
       </select>
     </div>
 
-    <div style="padding-right: 1em;">
+    <div class="form-field">
       <label for="status_select">Status:</label>
       <select id="status_select" name="status" value="{{.QueryParams.status}}"
           hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
@@ -83,17 +89,19 @@
       </select>
     </div>
 
-    <div style="padding-right: 1em;">
+    <div class="form-field">
       <label for="due_date_search_type_select">Due Date Search Type:</label>
-      <select id="due_date_search_type_select" name="due_date_search_type" onchange="handleDueDateSearchTypeSelectChange(this.value)"
+      <select id="due_date_search_type_select" name="dueDateSearchType" onchange="handleDueDateSearchTypeSelectChange(this.value)"
           hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
-        <option value="year">Year</option>
-        <option value="month">Month</option>
-        <option value="day">Day</option>
+        <option value="year" {{if eq .QueryParams.dueDateSearchType "year" }}selected{{end}}>Year</option>
+        <option value="month" {{if eq .QueryParams.dueDateSearchType "month" }}selected{{end}}>Month</option>
+        <option value="day" {{if eq .QueryParams.dueDateSearchType "day" }}selected{{end}}>Day</option>
       </select>
     </div>
 
-    <div style="padding-right: 1em;">
+      <!-- TODO: fix flash of all due_date_... inputs on initial load -->
+
+    <div class="form-field">
       <label id="due_date_label" for="due_date_year_input">Due Date:</label>
       {{if not .QueryParams.dueDate}}
       <input id="due_date_year_input" type="number" name="dueDate" min="2020" max="2030" value=""
@@ -104,18 +112,18 @@
           hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
       {{else}}
       <input id="due_date_year_input" type="number" name="dueDate" min="2020" max="2030" 
-          {{if gt (len .QueryParams.dueDate) 4}}disabled{{else}} value="{{.QueryParams.dueDate}}" {{end}}
+          {{if gt (len .QueryParams.dueDate) 4}}disabled hidden{{else}} value="{{.QueryParams.dueDate}}" {{end}}
           hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
       <input id="due_date_year_month_input" type="month" name="dueDate" min="2020-01" max="2030-12"
-          {{if ne (len .QueryParams.dueDate) 7}}disabled{{else}} value="{{.QueryParams.dueDate}}" {{end}}
+          {{if ne (len .QueryParams.dueDate) 7}}disabled hidden{{else}} value="{{.QueryParams.dueDate}}" {{end}}
           hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
       <input id="due_date_year_month_day_input" type="date" name="dueDate" min="2020-01-01" max="2030-12-31"
-          {{if lt (len .QueryParams.dueDate) 10}}disabled{{else}} value="{{.QueryParams.dueDate}}" {{end}}
+          {{if lt (len .QueryParams.dueDate) 10}}disabled hidden{{else}} value="{{.QueryParams.dueDate}}" {{end}}
           hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
       {{end}}
     </div>
 
-    <div style="padding-right: 1em;">
+    <div class="form-field">
       <label for="sort_column_select">Sort By:</label>
       <select id="sort_column_select" name="otherCursorColumn"
           hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
@@ -127,7 +135,7 @@
       </select>
     </div>
 
-    <div>
+    <div class="form-field">
       <label for="sort_order_select">Order:</label>
       <select id="sort_order_select" name="sortOrder"
           hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
