@@ -16,7 +16,7 @@
     border: 1px solid grey;
   }
 
-  tr:hover {
+  tbody tr:hover {
     background-color: lightgrey;
   }
 
@@ -53,14 +53,15 @@
     <div class="form-field">
       <label for="name">Name:</label>
       <input id="name" name="name" type="search" value="{{.QueryParams.name}}" autocomplete="on" autofocus hx-get="/tasks"
-        hx-include="input, select" hx-trigger="keyup changed delay:500ms"
-        hx-target="tbody" hx-push-url="true" hx-indicator="#table_spinner" />
+        hx-include="input, select" hx-trigger="search, keyup changed delay:500ms"
+        hx-target="tbody" hx-push-url="true" hx-indicator="#seach_spinner" />
     </div>
 
+      <!-- #name_search_type only triggers the request when #name isn't empty; see htmx:configRequest <script> at page's bottom -->
     <div class="form-field">
       <label for="name_search_type">Name Search Type:</label>
       <select id="name_search_type" name="nameSearchType" value="{{.QueryParams.nameSearchType}}"
-          hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
+          hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true" hx-indicator="#seach_spinner">
         <option value="contains" {{if eq .QueryParams.nameSearchType "contains" }}selected{{end}}>CONTAINS</option>
         <option value="startsWith" {{if eq .QueryParams.nameSearchType "startsWith" }}selected{{end}}>STARTS WITH
         </option>
@@ -71,7 +72,7 @@
     <div class="form-field">
       <label for="priority_select">Priority:</label>
       <select id="priority_select" name="priority" value="{{.QueryParams.priority}}"
-          hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
+          hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true" hx-indicator="#seach_spinner">
         {{range $k, $p := .Priorities}}
         <option value={{$p.Value}} {{if eq $.QueryParams.priority $p.Value}}selected{{end}}>{{$p.TagContent}}
         </option>
@@ -82,7 +83,7 @@
     <div class="form-field">
       <label for="status_select">Status:</label>
       <select id="status_select" name="status" value="{{.QueryParams.status}}"
-          hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
+          hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true" hx-indicator="#seach_spinner">
         {{ range $k, $s := .Statuses}}
         <option value={{$s.Value}} {{if eq $.QueryParams.status $s.Value}}selected{{end}}>{{$s.TagContent}}</option>
         {{end}}
@@ -91,42 +92,56 @@
 
     <div class="form-field">
       <label for="due_date_search_type_select">Due Date Search Type:</label>
-      <select id="due_date_search_type_select" name="dueDateSearchType" onchange="handleDueDateSearchTypeSelectChange(this.value)"
-          hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
+      <select id="due_date_search_type_select" name="dueDateSearchType" onchange="handleDueDateSearchTypeSelectChange(this.value)">
         <option value="year" {{if eq .QueryParams.dueDateSearchType "year" }}selected{{end}}>Year</option>
         <option value="month" {{if eq .QueryParams.dueDateSearchType "month" }}selected{{end}}>Month</option>
         <option value="day" {{if eq .QueryParams.dueDateSearchType "day" }}selected{{end}}>Day</option>
       </select>
     </div>
 
-      <!-- TODO: fix flash of all due_date_... inputs on initial load -->
-
     <div class="form-field">
-      <label id="due_date_label" for="due_date_year_input">Due Date:</label>
-      {{if not .QueryParams.dueDate}}
-      <input id="due_date_year_input" type="number" name="dueDate" min="2020" max="2030" value=""
-          hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
-      <input id="due_date_year_month_input" type="month" name="dueDate" min="2020-01" max="2030-12" value="" disabled hidden
-          hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
-      <input id="due_date_year_month_day_input" type="date" name="dueDate" min="2020-01-01" max="2030-12-31" value="" disabled hidden
-          hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
-      {{else}}
-      <input id="due_date_year_input" type="number" name="dueDate" min="2020" max="2030" 
-          {{if gt (len .QueryParams.dueDate) 4}}disabled hidden{{else}} value="{{.QueryParams.dueDate}}" {{end}}
-          hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
-      <input id="due_date_year_month_input" type="month" name="dueDate" min="2020-01" max="2030-12"
-          {{if ne (len .QueryParams.dueDate) 7}}disabled hidden{{else}} value="{{.QueryParams.dueDate}}" {{end}}
-          hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
-      <input id="due_date_year_month_day_input" type="date" name="dueDate" min="2020-01-01" max="2030-12-31"
-          {{if lt (len .QueryParams.dueDate) 10}}disabled hidden{{else}} value="{{.QueryParams.dueDate}}" {{end}}
-          hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
-      {{end}}
+      <label id="due_date_label"
+          {{if eq .QueryParams.dueDateSearchType "month" }}
+              for="due_date_year_month_input"
+          {{else if eq .QueryParams.dueDateSearchType "day" }}
+              for="due_date_year_month_day_input"
+          {{else}}
+              for="due_date_year_input"
+          {{end}}
+      >Due Date:</label>
+
+      <input id="due_date_year_input" type="number" min="2020" max="2030"
+          {{if or (not .QueryParams.dueDateSearchType) (eq .QueryParams.dueDateSearchType "year") }}
+              value="{{.QueryParams.dueDate}}"
+          {{else}}
+              value="" disabled hidden
+          {{end}}
+          onchange="onDueDateChange(this.value)">
+
+      <input id="due_date_year_month_input" type="month" min="2020-01" max="2030-12"
+          {{if eq .QueryParams.dueDateSearchType "month" }}
+              value="{{.QueryParams.dueDate}}"
+          {{else}}
+              value="" disabled hidden
+          {{end}}
+          onchange="onDueDateChange(this.value)">
+
+      <input id="due_date_year_month_day_input" type="date" min="2020-01-01" max="2030-12-31"
+          {{if eq .QueryParams.dueDateSearchType "day" }}
+              value="{{.QueryParams.dueDate}}"
+          {{else}}
+              value="" disabled hidden
+          {{end}}
+          onchange="onDueDateChange(this.value)">
+
+      <input id="due_date_input" type="hidden" name="dueDate" value="{{.QueryParams.dueDate}}" hx-trigger="change"
+          hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true" hx-indicator="#seach_spinner">
     </div>
 
     <div class="form-field">
       <label for="sort_column_select">Sort By:</label>
       <select id="sort_column_select" name="otherCursorColumn"
-          hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
+          hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true" hx-indicator="#seach_spinner">
         {{range $k, $s := .SortColumnSelectOptions}}
         <option value="{{$s.Value}}" {{if eq $.QueryParams.otherCursorColumn $s.Value}}selected{{end}}
             {{if and (not $.QueryParams.otherCursorColumn) (eq $s.Value "name")}}selected{{end}}>{{$s.TagContent}}
@@ -138,10 +153,21 @@
     <div class="form-field">
       <label for="sort_order_select">Order:</label>
       <select id="sort_order_select" name="sortOrder"
-          hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true">
+          hx-get="/tasks" hx-include="input, select" hx-target="tbody" hx-push-url="true" hx-indicator="#seach_spinner">
         <option value="asc" {{if eq $.QueryParams.sortOrder "asc" }}selected{{end}}>ASC</option>
         <option value="desc" {{if eq $.QueryParams.sortOrder "desc" }}selected{{end}}>DESC</option>
       </select>
+    </div>
+
+    <div id="seach_spinner" class="form-field htmx-indicator">
+      <br/>
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+        <path fill="currentColor"
+          d="M12,23a9.63,9.63,0,0,1-8-9.5,9.51,9.51,0,0,1,6.79-9.1A1.66,1.66,0,0,0,12,2.81h0a1.67,1.67,0,0,0-1.94-1.64A11,11,0,0,0,12,23Z">
+          <animateTransform attributeName="transform" dur="0.75s" repeatCount="indefinite" type="rotate"
+            values="0 12 12;360 12 12" />
+        </path>
+      </svg>
     </div>
 
   </div>
@@ -162,6 +188,7 @@
         </path>
       </svg>
     </div>
+
   </div>
 
   <table>
@@ -183,7 +210,7 @@
           hx-vals='{"idCursorValue": "{{$val.ID}}", "otherCursorValue": "{{$.OtherCursorValueStr}}"}'
           hx-trigger="revealed"
           hx-swap="outerHTML" 
-          hx-indicator="#table_spinner">
+          hx-indicator="#below_table_spinner">
       {{else}}
       <tr>
       {{end}}
@@ -215,7 +242,7 @@
 
   </table>
 
-  <div id="table_spinner" style="padding-left: 1em; padding-top: 0.5em;" class="htmx-indicator">
+  <div id="below_table_spinner" style="padding-left: 1em; padding-top: 0.5em;" class="htmx-indicator">
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
       <path fill="currentColor"
         d="M12,23a9.63,9.63,0,0,1-8-9.5,9.51,9.51,0,0,1,6.79-9.1A1.66,1.66,0,0,0,12,2.81h0a1.67,1.67,0,0,0-1.94-1.64A11,11,0,0,0,12,23Z">
@@ -227,76 +254,56 @@
 
   <script>
 
-    const dueDateYearInput = document.getElementById("due_date_year_input");
-    const dueDateYearMonthInput = document.getElementById("due_date_year_month_input");
-    const dueDateYearMonthDayInput = document.getElementById("due_date_year_month_day_input");
-    const dueDateLabel = document.getElementById("due_date_label");
-
-    onload = (event) => {
-      const urlSearchParams = new URLSearchParams(document.location.search);
-      const dueDate = "dueDate"
-      
-      if (urlSearchParams.has(dueDate)) {
-        const dueDateQueryParam = urlSearchParams.get(dueDate);
-        switch (dueDateQueryParam.length) {
-          case 4:
-            dueDateYearInput.value = dueDateQueryParam;
-            dueDateYearMonthInput.setAttribute("disabled", "");
-            dueDateYearMonthInput.setAttribute("hidden", "");
-            dueDateYearMonthDayInput.setAttribute("disabled", "");
-            dueDateYearMonthDayInput.setAttribute("hidden", "");
-            dueDateLabel.setAttribute("for", "due_date_year_input");
-            break;
-          case 7:
-            dueDateYearMonthInput.value = dueDateQueryParam;
-            dueDateYearInput.setAttribute("disabled", "");
-            dueDateYearInput.setAttribute("hidden", "");
-            dueDateYearMonthDayInput.setAttribute("disabled", "");
-            dueDateYearMonthDayInput.setAttribute("hidden", "");
-            dueDateLabel.setAttribute("for", "due_date_year_month_input");
-            break;
-          default:
-            dueDateYearMonthDayInput.value = dueDateQueryParam;
-            dueDateYearInput.setAttribute("disabled", "");
-            dueDateYearInput.setAttribute("hidden", "");
-            dueDateYearMonthInput.setAttribute("disabled", "");
-            dueDateYearMonthInput.setAttribute("hidden", "");
-            dueDateLabel.setAttribute("for", "due_date_year_month_day_input");
-            break;
-        };
-      }
-    };
+    const dueDateInput = document.getElementById('due_date_input');
 
     function handleDueDateSearchTypeSelectChange(value) {
+      const dueDateYearInput = document.getElementById('due_date_year_input');
+      const dueDateYearMonthInput = document.getElementById('due_date_year_month_input');
+      const dueDateYearMonthDayInput = document.getElementById('due_date_year_month_day_input');
+      const dueDateLabel = document.getElementById("due_date_label");
+
+      if (dueDateInput.value != '') {
+        onDueDateChange('');
+      }
+
+      dueDateYearInput.value = '';
+      dueDateYearMonthInput.value = '';
+      dueDateYearMonthDayInput.value = '';
+
       switch (value) {
-        case "year":
-          dueDateYearInput.removeAttribute("disabled");
-          dueDateYearInput.removeAttribute("hidden");
-          dueDateYearMonthInput.setAttribute("disabled", "");
-          dueDateYearMonthInput.setAttribute("hidden", "");
-          dueDateYearMonthDayInput.setAttribute("disabled", "");
-          dueDateYearMonthDayInput.setAttribute("hidden", "");
-          dueDateLabel.setAttribute("for", "due_date_year_input");
+        case 'year':
+          dueDateYearInput.removeAttribute('disabled');
+          dueDateYearInput.removeAttribute('hidden');
+          dueDateYearMonthInput.setAttribute('disabled', '');
+          dueDateYearMonthInput.setAttribute('hidden', '');
+          dueDateYearMonthDayInput.setAttribute('disabled', '');
+          dueDateYearMonthDayInput.setAttribute('hidden', '');
+          dueDateLabel.setAttribute('for', 'due_date_year_input');
           break;
-        case "month":
-          dueDateYearInput.setAttribute("disabled", "");
-          dueDateYearInput.setAttribute("hidden", "");
-          dueDateYearMonthInput.removeAttribute("disabled");
-          dueDateYearMonthInput.removeAttribute("hidden");
-          dueDateYearMonthDayInput.setAttribute("disabled", "");
-          dueDateYearMonthDayInput.setAttribute("hidden", "");
-          dueDateLabel.setAttribute("for", "due_date_year_month_input");
+        case 'month':
+          dueDateYearInput.setAttribute('disabled', '');
+          dueDateYearInput.setAttribute('hidden', '');
+          dueDateYearMonthInput.removeAttribute('disabled');
+          dueDateYearMonthInput.removeAttribute('hidden');
+          dueDateYearMonthDayInput.setAttribute('disabled', '');
+          dueDateYearMonthDayInput.setAttribute('hidden', '');
+          dueDateLabel.setAttribute('for', 'due_date_year_month_input');
           break;
         default:
-          dueDateYearInput.setAttribute("disabled", "");
-          dueDateYearInput.setAttribute("hidden", "");
-          dueDateYearMonthInput.setAttribute("disabled", "");
-          dueDateYearMonthInput.setAttribute("hidden", "");
-          dueDateYearMonthDayInput.removeAttribute("disabled");
-          dueDateYearMonthDayInput.removeAttribute("hidden");
-          dueDateLabel.setAttribute("for", "due_date_year_month_day_input");
+          dueDateYearInput.setAttribute('disabled', '');
+          dueDateYearInput.setAttribute('hidden', '');
+          dueDateYearMonthInput.setAttribute('disabled', '');
+          dueDateYearMonthInput.setAttribute('hidden', '');
+          dueDateYearMonthDayInput.removeAttribute('disabled');
+          dueDateYearMonthDayInput.removeAttribute('hidden');
+          dueDateLabel.setAttribute('for', 'due_date_year_month_day_input');
           break;
       }
+    }
+
+    function onDueDateChange(value) {
+      dueDateInput.setAttribute('value', value);
+      htmx.trigger('#due_date_input', 'change');
     }
 
     htmx.config.timeout = 30_000;
@@ -312,6 +319,18 @@
 
     document.body.addEventListener('htmx:sendError', function(event) {
       alert('A nework error occurred');
+    });
+
+    document.addEventListener('htmx:configRequest', function(event) {
+      const nameInputValue = event.detail.formData.get('name');
+      const nameInputValueIsNullOrEmpty = (nameInputValue == null || nameInputValue == '');
+
+      if (nameInputValueIsNullOrEmpty
+            && event.detail.path == '/tasks'
+            && event.detail.verb == 'get'
+            && event.detail.elt.id == 'name_search_type') {
+        event.preventDefault();
+      }
     });
 
   </script>

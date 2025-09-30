@@ -67,18 +67,9 @@ func main() {
 				data := TasksPageData{Tasks: tasks, QueryParams: queryParams, Priorities: priorities, Statuses: statuses, SortColumnSelectOptions: sortColumnSelectOptions, OtherCursorValueStr: otherCursorValue}
 				tmpl.Execute(w, data)
 			} else {
-				row := `
-					<tr>
-						<td>%s</td>
-						<td>%s</td>
-						<td>%s</td>
-						<td>%s</td>
-					</tr>
-					`
-				// <td style="padding-left: 3em;">%d</td>
-
 				var priority string
 				var status string
+
 				for idx, t := range tasks {
 					switch t.Priority {
 					case 1:
@@ -88,6 +79,7 @@ func main() {
 					case 3:
 						priority = "HIGH"
 					}
+
 					switch t.Status {
 					case 1:
 						status = "NEW"
@@ -98,11 +90,10 @@ func main() {
 					case 4:
 						status = "DONE"
 					}
-					if idx < (len(tasks) - 1) {
-						w.Write([]byte(fmt.Sprintf(row, t.Name, priority, status, t.DueDate)))
-						// w.Write([]byte(fmt.Sprintf(row, t.Name, priority, status, t.DueDate, t.ID)))
-					} else {
+
+					if idx == (len(tasks)-1) && len(tasks) == 25 {
 						var otherCursorValueStr string
+
 						switch otherCursorColumn {
 						case "priority":
 							otherCursorValueStr = strconv.Itoa(int(t.Priority))
@@ -113,6 +104,7 @@ func main() {
 						default:
 							otherCursorValueStr = t.Name
 						}
+
 						w.Write([]byte(fmt.Sprintf(`
 						<tr
 								hx-get="/tasks"
@@ -120,16 +112,23 @@ func main() {
 								hx-vals='{"idCursorValue": "%d", "otherCursorValue": "%s"}'
 								hx-trigger="revealed"
 								hx-swap="afterend"
-								hx-indicator="#table_spinner"
+								hx-indicator="#below_table_spinner"
 						>
 							<td>%s</td>
 							<td>%s</td>
 							<td>%s</td>
 							<td>%s</td>
 						</tr>
-					`, t.ID, otherCursorValueStr, t.Name, priority, status, t.DueDate)))
-						// <td style="padding-left: 3em;">%d</td>
-						// `, t.ID, otherCursorValueStr, t.Name, priority, status, t.DueDate, t.ID)))
+						`, t.ID, otherCursorValueStr, t.Name, priority, status, t.DueDate)))
+					} else {
+						w.Write([]byte(fmt.Sprintf(`
+						<tr>
+							<td>%s</td>
+							<td>%s</td>
+							<td>%s</td>
+							<td>%s</td>
+						</tr>
+						`, t.Name, priority, status, t.DueDate)))
 					}
 				}
 			}
@@ -383,6 +382,7 @@ func countTasks(db *sql.DB, name string, nameSearchType string, priority uint8, 
 	dueDate += "%"
 
 	sql := fmt.Sprintf(`SELECT FORMAT('%%,d', COUNT(*)) FROM tasks
+	INDEXED BY tasks_count_idx
 	WHERE name LIKE ?
 	AND priority %s
 	AND status %s
