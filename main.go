@@ -24,6 +24,7 @@ func main() {
 			nameSearchType := searchPartMap.Get("nameSearchType")
 			priority := convertQueryParamToUint8(searchPartMap, "priority")
 			status := convertQueryParamToUint8(searchPartMap, "status")
+			dueDateSearchType := searchPartMap.Get("dueDateSearchType")
 			dueDate := searchPartMap.Get("dueDate")
 			idCursorValue := convertQueryParamToUint32(searchPartMap, "idCursorValue")
 			otherCursorColumn := searchPartMap.Get("otherCursorColumn")
@@ -32,14 +33,15 @@ func main() {
 
 			var tasks []Task
 			if idCursorValue == 0 || otherCursorValue == "" {
-				tasks = fetchFirst25Tasks(db, name, nameSearchType, priority, status, dueDate, otherCursorColumn, sortOrder)
+				tasks = fetchFirst25Tasks(db, name, nameSearchType, priority, status, dueDateSearchType, dueDate,
+					otherCursorColumn, sortOrder)
 				numTasksFound := len(tasks)
 
 				if numTasksFound > 0 {
 					lastTask := tasks[len(tasks)-1]
 					switch otherCursorColumn {
 					case "due_date":
-						otherCursorValue = lastTask.DueDate
+						otherCursorValue = strconv.FormatUint(uint64(lastTask.DueDate), 10)
 					case "status":
 						otherCursorValue = strconv.Itoa(int(lastTask.Status))
 					case "priority":
@@ -51,7 +53,8 @@ func main() {
 
 				w.Header().Set("Hx-Trigger", "countTasks")
 			} else {
-				tasks = fetchNext25Tasks(db, name, nameSearchType, priority, status, dueDate, idCursorValue, otherCursorColumn, otherCursorValue, sortOrder)
+				tasks = fetchNext25Tasks(db, name, nameSearchType, priority, status, dueDateSearchType, dueDate,
+					idCursorValue, otherCursorColumn, otherCursorValue, sortOrder)
 			}
 
 			queryParams := make(map[string]string)
@@ -91,6 +94,8 @@ func main() {
 						status = "DONE"
 					}
 
+					var dueDateStr = strconv.FormatUint(uint64(t.DueDate), 10)
+
 					if idx == (len(tasks)-1) && len(tasks) == 25 {
 						var otherCursorValueStr string
 
@@ -100,7 +105,7 @@ func main() {
 						case "status":
 							otherCursorValueStr = strconv.Itoa(int(t.Status))
 						case "due_date":
-							otherCursorValueStr = t.DueDate
+							otherCursorValueStr = dueDateStr
 						default:
 							otherCursorValueStr = t.Name
 						}
@@ -119,7 +124,7 @@ func main() {
 							<td>%s</td>
 							<td>%s</td>
 						</tr>
-						`, t.ID, otherCursorValueStr, t.Name, priority, status, t.DueDate)))
+							`, t.ID, otherCursorValueStr, t.Name, priority, status, t.DueDateStr)))
 					} else {
 						w.Write([]byte(fmt.Sprintf(`
 						<tr>
@@ -128,7 +133,7 @@ func main() {
 							<td>%s</td>
 							<td>%s</td>
 						</tr>
-						`, t.Name, priority, status, t.DueDate)))
+						`, t.Name, priority, status, t.DueDateStr)))
 					}
 				}
 			}
@@ -141,6 +146,7 @@ func main() {
 				searchPartMap.Get("nameSearchType"),
 				convertQueryParamToUint8(searchPartMap, "priority"),
 				convertQueryParamToUint8(searchPartMap, "status"),
+				searchPartMap.Get("dueDateSearchType"),
 				searchPartMap.Get("dueDate"),
 			)
 			var taskCountMsg string
@@ -174,8 +180,8 @@ func convertQueryParamToUint32(searchPartMap url.Values, paramName string) uint3
 	return uint32(num)
 }
 
-func fetchNext25Tasks(db *sql.DB, name string, nameSearchType string, priority uint8, status uint8, dueDate string,
-	idCursorValue uint32, otherCursorColumn string, otherCursorValue string, sortOrder string) []Task {
+func fetchNext25Tasks(db *sql.DB, name string, nameSearchType string, priority uint8, status uint8, dueDateSearchType string,
+	dueDate string, idCursorValue uint32, otherCursorColumn string, otherCursorValue string, sortOrder string) []Task {
 	switch nameSearchType {
 	case "startsWith":
 		name += "%"
@@ -184,8 +190,6 @@ func fetchNext25Tasks(db *sql.DB, name string, nameSearchType string, priority u
 	default:
 		name = "%" + name + "%"
 	}
-
-	dueDate += "%"
 
 	var priorityClause string
 	switch priority {
@@ -213,6 +217,24 @@ func fetchNext25Tasks(db *sql.DB, name string, nameSearchType string, priority u
 		statusClause = "IN (1, 2, 3, 4)"
 	}
 
+	var dueDateClause string
+	if len(dueDate) == 0 {
+		dueDateClause = ""
+	} else {
+		switch dueDateSearchType {
+		case "year":
+			dueDateClause = "AND due_date >= " + dueDate + "0101 AND due_date <= " + dueDate + "1231"
+		case "month":
+			yrMon := strings.Replace(dueDate, "-", "", 1)
+			dueDateClause = "AND due_date >= " + yrMon + "01 AND due_date <= " + yrMon + "31"
+		case "day":
+			yrMonDay := strings.Replace(dueDate, "-", "", 2)
+			dueDateClause = "AND due_date = " + yrMonDay
+		default:
+			dueDateClause = ""
+		}
+	}
+
 	cursorColumns := []string{"name", "priority", "status", "due_date"}
 	if !slices.Contains(cursorColumns, strings.ToLower(otherCursorColumn)) {
 		otherCursorColumn = "name"
@@ -227,35 +249,24 @@ func fetchNext25Tasks(db *sql.DB, name string, nameSearchType string, priority u
 		sortOrder = "ASC"
 	}
 
-	var index string
-	switch otherCursorColumn {
-	case "status":
-		index = "tasks_status_id_idx"
-	case "priority":
-		index = "tasks_priority_id_idx"
-	case "due_date":
-		index = "tasks_due_date_id_idx"
-	default:
-		index = "tasks_name_id_idx"
-	}
-
 	sql := fmt.Sprintf(`SELECT id, name, priority, status, due_date FROM tasks
-	INDEXED BY %s
+	INDEXED BY tasks_name_priority_status_due_date_idx
 	WHERE name LIKE ?
 	AND priority %s
 	AND status %s
-	AND due_date LIKE ?
+	%s
 	AND (%s, id) %s (?, ?)
 	ORDER BY %s %s, id %s
-	LIMIT 25`, index, priorityClause, statusClause, otherCursorColumn, cursorOperator, otherCursorColumn, sortOrder, sortOrder)
+	LIMIT 25`, priorityClause, statusClause, dueDateClause, otherCursorColumn, cursorOperator, otherCursorColumn, sortOrder, sortOrder)
 
 	fmt.Println("\nSQL...fetch next 25 tasks")
 	fmt.Println(sql + "\n")
 	fmt.Println("NAME:", name)
-	fmt.Println("DUE_DATE:", dueDate)
+	fmt.Println("DUE_DATE clause:", dueDateClause)
 	fmt.Println("Other cursor value:", otherCursorValue)
-	fmt.Println("ID cursor value:", idCursorValue)
-	rows, err := db.Query(sql, name, dueDate, otherCursorValue, idCursorValue)
+	fmt.Println("ID cursor value:", idCursorValue, "\n")
+
+	rows, err := db.Query(sql, name, otherCursorValue, idCursorValue)
 	if err != nil {
 		panic(err)
 	}
@@ -267,13 +278,15 @@ func fetchNext25Tasks(db *sql.DB, name string, nameSearchType string, priority u
 		if err != nil {
 			panic(err)
 		}
+		dueDateTempStr := strconv.FormatUint(uint64(task.DueDate), 10)
+		task.DueDateStr = dueDateTempStr[0:4] + "-" + dueDateTempStr[4:6] + "-" + dueDateTempStr[6:]
 		tasks = append(tasks, task)
 	}
 	return tasks
 }
 
-func fetchFirst25Tasks(db *sql.DB, name string, nameSearchType string, priority uint8, status uint8, dueDate string,
-	sortColumn string, sortOrder string) []Task {
+func fetchFirst25Tasks(db *sql.DB, name string, nameSearchType string, priority uint8, status uint8,
+	dueDateSearchType string, dueDate string, sortColumn string, sortOrder string) []Task {
 	switch nameSearchType {
 	case "startsWith":
 		name += "%"
@@ -299,7 +312,22 @@ func fetchFirst25Tasks(db *sql.DB, name string, nameSearchType string, priority 
 		statusClause = "IN (1, 2, 3, 4)"
 	}
 
-	dueDate += "%"
+	var dueDateClause string
+	if len(dueDate) == 0 {
+		dueDateClause = ""
+	} else {
+		switch dueDateSearchType {
+		case "year":
+			dueDateClause += "AND due_date >= " + dueDate + "0101 AND due_date <= " + dueDate + "1231"
+		case "month":
+			yyyyMmDueDate := strings.Replace(dueDate, "-", "", 1)
+			dueDateClause += "AND due_date >= " + yyyyMmDueDate + "01 AND due_date <= " + yyyyMmDueDate + "31"
+		case "day":
+			dueDateClause += "AND due_date = " + strings.Replace(dueDate, "-", "", 2)
+		default:
+			dueDateClause = ""
+		}
+	}
 
 	if !slices.Contains([]string{"name", "priority", "status", "due_date"}, sortColumn) {
 		sortColumn = "name"
@@ -309,31 +337,19 @@ func fetchFirst25Tasks(db *sql.DB, name string, nameSearchType string, priority 
 		sortOrder = "ASC"
 	}
 
-	var index string
-	switch sortColumn {
-	case "status":
-		index = "tasks_status_id_idx"
-	case "priority":
-		index = "tasks_priority_id_idx"
-	case "due_date":
-		index = "tasks_due_date_id_idx"
-	default:
-		index = "tasks_name_id_idx"
-	}
-
 	sql := fmt.Sprintf(`SELECT id, name, priority, status, due_date FROM tasks
-	INDEXED BY %s
+	INDEXED BY tasks_name_priority_status_due_date_idx
 	WHERE name LIKE ?
 	AND priority %s
 	AND status %s
-	AND due_date LIKE ?
+	%s
 	ORDER BY %s %s, id %s
-	LIMIT 25`, index, priorityClause, statusClause, sortColumn, sortOrder, sortOrder)
+	LIMIT 25`, priorityClause, statusClause, dueDateClause, sortColumn, sortOrder, sortOrder)
 
 	fmt.Println("\nSQL...fetch first 25 tasks")
 	fmt.Println(sql + "\n")
 	fmt.Println("NAME:", name)
-	fmt.Println("DUE_DATE:", dueDate)
+	fmt.Println("DUE_DATE clause:", dueDateClause)
 
 	var tasks []Task
 	rows, err := db.Query(sql, name, dueDate)
@@ -346,6 +362,8 @@ func fetchFirst25Tasks(db *sql.DB, name string, nameSearchType string, priority 
 			if err != nil {
 				panic(err)
 			} else {
+				dueDateTempStr := strconv.FormatUint(uint64(task.DueDate), 10)
+				task.DueDateStr = dueDateTempStr[0:4] + "-" + dueDateTempStr[4:6] + "-" + dueDateTempStr[6:]
 				tasks = append(tasks, task)
 			}
 		}
@@ -353,7 +371,8 @@ func fetchFirst25Tasks(db *sql.DB, name string, nameSearchType string, priority 
 	return tasks
 }
 
-func countTasks(db *sql.DB, name string, nameSearchType string, priority uint8, status uint8, dueDate string) string {
+func countTasks(db *sql.DB, name string, nameSearchType string, priority uint8, status uint8,
+	dueDateSearchType string, dueDate string) string {
 	switch nameSearchType {
 	case "startsWith":
 		name += "%"
@@ -379,19 +398,35 @@ func countTasks(db *sql.DB, name string, nameSearchType string, priority uint8, 
 		statusClause = "IN (1, 2, 3, 4)"
 	}
 
-	dueDate += "%"
+	var dueDateClause string
+	if len(dueDate) == 0 {
+		dueDateClause = ""
+	} else {
+		switch dueDateSearchType {
+		case "year":
+			dueDateClause = "AND due_date >= " + dueDate + "0101 AND due_date <= " + dueDate + "1231"
+		case "month":
+			yrMon := strings.Replace(dueDate, "-", "", 1)
+			dueDateClause = "AND due_date >= " + yrMon + "01 AND due_date <= " + yrMon + "31"
+		case "day":
+			yrMonDay := strings.Replace(dueDate, "-", "", 2)
+			dueDateClause = "AND due_date = " + yrMonDay
+		default:
+			dueDateClause = ""
+		}
+	}
 
 	sql := fmt.Sprintf(`SELECT FORMAT('%%,d', COUNT(*)) FROM tasks
-	INDEXED BY tasks_count_idx
+	INDEXED BY tasks_name_priority_status_due_date_idx
 	WHERE name LIKE ?
 	AND priority %s
 	AND status %s
-	AND due_date LIKE ?`, priorityClause, statusClause)
+	%s`, priorityClause, statusClause, dueDateClause)
 
 	fmt.Println("\nSQL...count tasks")
 	fmt.Println(sql + "\n")
 	fmt.Println("NAME:", name)
-	fmt.Println("DUE_DATE:", dueDate)
+	fmt.Println("DUE_DATE clause:", dueDateClause)
 
 	var count string
 	err := db.QueryRow(sql, name, dueDate).Scan(&count)
@@ -402,11 +437,12 @@ func countTasks(db *sql.DB, name string, nameSearchType string, priority uint8, 
 }
 
 type Task struct {
-	ID       uint32
-	Name     string
-	Priority uint8
-	Status   uint8
-	DueDate  string // convert to time.Time objects only when needed
+	ID         uint32
+	Name       string
+	Priority   uint8
+	Status     uint8
+	DueDate    uint32 // convert to time.Time objects only when needed
+	DueDateStr string
 }
 
 func (t Task) string() string {
